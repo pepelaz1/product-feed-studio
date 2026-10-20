@@ -18,6 +18,96 @@ function el(tag, className, text) {
   if (text != null) node.textContent = text;
   return node;
 }
+let openDropdown = null;
+let openDropdownWrap = null;
+document.addEventListener('pointerdown', event => {
+  if (openDropdownWrap && !openDropdownWrap.contains(event.target)) openDropdown?.();
+});
+function enhanceSelect(select) {
+  const wrap = select.parentElement;
+  wrap.classList.add('dropdown');
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+  const label = document.querySelector(`label[for="${select.id}"]`);
+  const button = el('button', 'dropdown-trigger');
+  button.type = 'button';
+  button.id = `${select.id}-trigger`;
+  button.setAttribute('aria-label', label?.textContent.trim() || select.id);
+  button.setAttribute('aria-haspopup', 'listbox');
+  button.setAttribute('aria-expanded', 'false');
+  const value = el('span', 'dropdown-value');
+  const chevron = el('span', 'dropdown-chevron');
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.innerHTML = '<svg viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  button.append(value, chevron);
+  const menu = el('div', 'dropdown-menu');
+  menu.id = `${select.id}-options`;
+  menu.setAttribute('role', 'listbox');
+  menu.setAttribute('aria-label', label?.textContent.trim() || select.id);
+  menu.hidden = true;
+  button.setAttribute('aria-controls', menu.id);
+  const options = [...select.options].map(option => {
+    const item = el('button', 'dropdown-option');
+    item.type = 'button';
+    item.setAttribute('role', 'option');
+    item.dataset.value = option.value;
+    item.append(el('span', '', option.textContent), el('span', 'dropdown-check', '✓'));
+    item.addEventListener('click', () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      update();
+      close();
+      button.focus();
+    });
+    menu.append(item);
+    return item;
+  });
+  function update() {
+    value.textContent = select.selectedOptions[0]?.textContent || '— Не выбрано —';
+    options.forEach(item => item.setAttribute('aria-selected', String(item.dataset.value === select.value)));
+  }
+  function close() {
+    menu.hidden = true;
+    wrap.classList.remove('is-open');
+    button.setAttribute('aria-expanded', 'false');
+    if (openDropdown === close) {
+      openDropdown = null;
+      openDropdownWrap = null;
+    }
+  }
+  function open() {
+    openDropdown?.();
+    menu.hidden = false;
+    wrap.classList.add('is-open');
+    button.setAttribute('aria-expanded', 'true');
+    openDropdown = close;
+    openDropdownWrap = wrap;
+  }
+  button.addEventListener('click', () => menu.hidden ? open() : close());
+  button.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      open();
+      options[Math.max(0, options.findIndex(item => item.dataset.value === select.value))]?.focus();
+    } else if (event.key === 'Escape') close();
+  });
+  menu.addEventListener('keydown', event => {
+    const index = options.indexOf(document.activeElement);
+    let next = index;
+    if (event.key === 'ArrowDown') next = Math.min(options.length - 1, index + 1);
+    else if (event.key === 'ArrowUp') next = Math.max(0, index - 1);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = options.length - 1;
+    else if (event.key === 'Escape') { close(); button.focus(); event.preventDefault(); return; }
+    else if (event.key === 'Tab') { close(); return; }
+    else return;
+    event.preventDefault();
+    options[next]?.focus();
+  });
+  if (label) label.htmlFor = button.id;
+  wrap.append(button, menu);
+  update();
+}
 function renderPreview(data) {
   const table = $('preview-table'); table.replaceChildren();
   const head = el('tr');
@@ -40,6 +130,7 @@ function renderMapping(data) {
     data.headers.forEach(header => select.append(new Option(header, header)));
     select.value = data.mapping[key] || '';
     wrap.append(select); row.append(caption, wrap); container.append(row);
+    enhanceSelect(select);
   });
   renderPreview(data);
   $('convert-btn').disabled = false;
@@ -102,8 +193,9 @@ zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
 zone.addEventListener('drop', event => { event.preventDefault(); zone.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
 $('file').addEventListener('change', event => loadFile(event.target.files[0]));
 $('encoding').addEventListener('change', () => { if ($('file').files[0]) loadFile($('file').files[0]); });
+enhanceSelect($('encoding'));
 $('sample-btn').addEventListener('click', async () => {
-  try { csv = await (await fetch('/sample/catalog.csv')).text(); filename = 'catalog.csv'; inspect(); }
+  try { csv = await (await fetch('/sample/ready-catalog.csv')).text(); filename = 'ready-catalog.csv'; inspect(); }
   catch (error) { message(error.message); }
 });
 $('convert-btn').addEventListener('click', async () => {
