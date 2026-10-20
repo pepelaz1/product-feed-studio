@@ -35,4 +35,7 @@
 .mode-switch strong{font-size:12px}
 .mode-switch small{font-size:10px;color:#789483;margin-top:4px}
 .download[hidden],.mapping-row span[hidden],#shop-settings[hidden]{display:none}
+[hidden]{display:none!important}
+#encoding-control{display:inline-flex;align-items:center;gap:8px}
+#sheet-control .select-wrap{min-width:180px}
 @media(max-width:600px){.mode-switch{grid-template-columns:1fr}}

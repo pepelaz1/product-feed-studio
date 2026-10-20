@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { parseCsv, suggestMapping, convertCsv, toYml, toCleanCsv } from './lib.mjs';
+import { readXlsx, cleanXlsx } from './xlsx.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(root, 'data');
@@ -26,7 +27,7 @@ async function readJson(req) {
   let size = 0; const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 3_000_000) throw new Error('Файл слишком большой. Лимит — 2 МБ CSV.');
+    if (size > 4_000_000) throw new Error('Файл слишком большой. Лимит — 2 МБ.');
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
@@ -35,13 +36,25 @@ async function readJson(req) {
 function checkCsv(csv) {
   if (typeof csv !== 'string' || Buffer.byteLength(csv) > 2_000_000) throw new Error('Выберите CSV-файл до 2 МБ.');
 }
+async function source(body) {
+  if (body.format === 'xlsx') {
+    if (typeof body.xlsx !== 'string' || body.xlsx.length > 2_800_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.xlsx))
+      throw new Error('Выберите XLSX-файл до 2 МБ.');
+    const buffer = Buffer.from(body.xlsx, 'base64');
+    if (buffer.length > 2_000_000) throw new Error('Выберите XLSX-файл до 2 МБ.');
+    return readXlsx(buffer, body.sheet);
+  }
+  checkCsv(body.csv);
+  return { csv: body.csv, sheets: [], sheet: '' };
+}
 
 const files = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['public/style.css', 'text/css; charset=utf-8']],
   ['/sample/catalog.csv', ['sample/catalog.csv', 'text/csv; charset=utf-8']],
-  ['/sample/ready-catalog.csv', ['sample/ready-catalog.csv', 'text/csv; charset=utf-8']]
+  ['/sample/ready-catalog.csv', ['sample/ready-catalog.csv', 'text/csv; charset=utf-8']],
+  ['/sample/ready-catalog.xlsx', ['sample/ready-catalog.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']]
 ]);
 const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
@@ -49,22 +62,25 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && files.has(path)) {
       const [file, type] = files.get(path);
       return send(res, 200, readFileSync(join(root, file)), type,
-        path === '/sample/ready-catalog.csv' ? 'ready-catalog.csv' : undefined);
+        path === '/sample/ready-catalog.csv' ? 'ready-catalog.csv' :
+          path === '/sample/ready-catalog.xlsx' ? 'ready-catalog.xlsx' : undefined);
     }
     if (req.method === 'POST' && path === '/api/inspect') {
-      const { csv, headerLine } = await readJson(req); checkCsv(csv);
-      const parsed = parseCsv(csv, headerLine);
+      const body = await readJson(req);
+      const input = await source(body);
+      const parsed = parseCsv(input.csv, body.headerLine);
       return json(res, 200, { headers: parsed.headers, delimiter: parsed.delimiter,
-        rows: parsed.rows.length, headerLine: parsed.headerLine,
+        rows: parsed.rows.length, headerLine: parsed.headerLine, sheets: input.sheets, sheet: input.sheet,
         sample: parsed.rows.slice(0, 4).map(row => row.cells),
         mapping: suggestMapping(parsed.headers) });
     }
     if (req.method === 'POST' && path === '/api/convert') {
-      const body = await readJson(req); checkCsv(body.csv);
+      const body = await readJson(req);
+      const input = await source(body);
       const mode = body.mode || 'yml';
-      const parsed = parseCsv(body.csv, body.headerLine);
+      const parsed = parseCsv(input.csv, body.headerLine);
       if (parsed.rows.length > 10_000) throw new Error('Лимит — 10 000 товаров за одну загрузку.');
-      const result = convertCsv(body.csv, body.mapping, body.shop, { mode, headerLine: body.headerLine });
+      const result = convertCsv(input.csv, body.mapping, body.shop, { mode, headerLine: body.headerLine });
       const id = randomUUID();
       const record = { id, createdAt: new Date().toISOString(), filename: String(body.filename || 'catalog.csv').slice(0, 120),
         mode,
@@ -76,12 +92,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && path === '/api/runs') return json(res, 200,
       db.prepare("SELECT id, created_at AS createdAt, filename, total, accepted, rejected, CASE WHEN feed = '' THEN 'clean' ELSE 'yml' END AS mode FROM runs ORDER BY created_at DESC LIMIT 10").all());
-    const match = path.match(/^\/api\/runs\/([0-9a-f-]{36})(?:\/(feed\.yml|clean\.csv))?$/);
+    const match = path.match(/^\/api\/runs\/([0-9a-f-]{36})(?:\/(feed\.yml|clean\.csv|clean\.xlsx))?$/);
     if (req.method === 'GET' && match) {
       const row = db.prepare('SELECT * FROM runs WHERE id = ?').get(match[1]);
       if (!row) return json(res, 404, { error: 'Конвертация не найдена.' });
       if (match[2] === 'feed.yml') return row.feed ? send(res, 200, row.feed, 'application/xml; charset=utf-8', 'catalog-feed.yml') : json(res, 404, { error: 'Для этой выгрузки YML не создавался.' });
       if (match[2] === 'clean.csv') return send(res, 200, row.clean_csv, 'text/csv; charset=utf-8', 'catalog-clean.csv');
+      if (match[2] === 'clean.xlsx') return send(res, 200, await cleanXlsx(row.clean_csv),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'catalog-clean.xlsx');
       return json(res, 200, { id: row.id, createdAt: row.created_at, filename: row.filename,
         mode: row.feed ? 'yml' : 'clean',
         total: row.total, accepted: row.accepted, rejected: row.rejected,

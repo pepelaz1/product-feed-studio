@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCsv, suggestMapping, convertCsv, toYml, toCleanCsv } from '../lib.mjs';
+import './xlsx.test.mjs';
 
 const csv = '\uFEFFАртикул;Название;Категория;Цена;Ссылка;Описание;Остаток\r\n' +
   'A1;"Чай, зелёный";Напитки;120,50;https://example.com/a1;"Строка 1\nСтрока 2";1\r\n' +

@@ -4,7 +4,7 @@ const fields = [
   ['price', 'Цена', true], ['url', 'Ссылка на товар', false], ['description', 'Описание', false],
   ['image', 'Ссылки на фото (;)', false], ['stock', 'Остаток (шт.)', false]
 ];
-let csv = '', filename = '';
+let csv = '', xlsx = '', filename = '', fileBytes = 0, sheet = '';
 let mode = 'yml', modeManuallySelected = false, headerLineChoice = 'auto';
 const message = (value, ok = false) => { $('message').textContent = value; $('message').classList.toggle('ok', ok); };
 const api = async (path, body) => {
@@ -140,6 +140,20 @@ function renderMapping(data) {
   renderPreview(data);
   $('convert-btn').disabled = false;
 }
+function renderSheets(data) {
+  const control = $('sheet-control');
+  control.hidden = !data.sheets?.length;
+  if (control.hidden) return;
+  const wrap = $('sheet-wrap'); wrap.replaceChildren(); wrap.className = 'select-wrap';
+  document.querySelector('#sheet-control label').htmlFor = 'sheet';
+  const select = el('select'); select.id = 'sheet';
+  data.sheets.forEach(name => select.append(new Option(name, name)));
+  sheet = data.sheet;
+  select.value = sheet;
+  select.addEventListener('change', () => { sheet = select.value; headerLineChoice = 'auto'; inspect(); });
+  wrap.append(select); enhanceSelect(select);
+}
+const source = () => xlsx ? { format: 'xlsx', xlsx, sheet } : { format: 'csv', csv };
 function setMode(nextMode, manual = false) {
   mode = nextMode;
   if (manual) modeManuallySelected = true;
@@ -157,9 +171,10 @@ function setMode(nextMode, manual = false) {
 }
 async function inspect() {
   try {
-    const data = await api('/api/inspect', { csv, headerLine: headerLineChoice });
+    const data = await api('/api/inspect', { ...source(), headerLine: headerLineChoice });
     if (!modeManuallySelected) setMode(data.mapping.url ? 'yml' : 'clean');
     renderMapping(data);
+    renderSheets(data);
     $('header-line').value = data.headerLine;
     $('header-line').disabled = false;
     $('header-auto').disabled = false;
@@ -167,7 +182,7 @@ async function inspect() {
       ? 'Заголовки найдены в первой строке — ничего не пропущено.'
       : `Заголовки найдены в строке ${data.headerLine}; строки 1–${data.headerLine - 1} пропущены.`;
     $('file-title').textContent = filename;
-    $('file-note').textContent = `${data.rows} строк · ${new Blob([csv]).size.toLocaleString('ru')} байт`;
+    $('file-note').textContent = `${data.rows} строк · ${fileBytes.toLocaleString('ru')} байт`;
     const count = data.headers.length;
     message(`Файл загружен. Найдено ${count} ${count % 10 === 1 && count % 100 !== 11 ? 'колонка' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'колонки' : 'колонок'}; проверьте сопоставление.`, true);
   } catch (error) { $('convert-btn').disabled = true; message(error.message); }
@@ -175,7 +190,16 @@ async function inspect() {
 async function loadFile(file) {
   if (!file) return;
   if (file.size > 2_000_000) return message('Файл больше 2 МБ.');
-  csv = new TextDecoder($('encoding').value).decode(await file.arrayBuffer());
+  const isExcel = /\.xlsx$/i.test(file.name);
+  if (!isExcel && !/\.csv$/i.test(file.name)) return message('Выберите файл .csv или .xlsx.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (isExcel) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x4000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x4000));
+    xlsx = btoa(binary); csv = '';
+  } else { csv = new TextDecoder($('encoding').value).decode(bytes); xlsx = ''; }
+  $('encoding-control').hidden = isExcel;
+  fileBytes = file.size; sheet = '';
   filename = file.name;
   headerLineChoice = 'auto'; modeManuallySelected = false;
   inspect();
@@ -189,12 +213,13 @@ function showResult(data) {
   $('feed-link').href = `/api/runs/${data.id}/feed.yml`;
   $('feed-link').hidden = data.mode !== 'yml';
   $('csv-link').href = `/api/runs/${data.id}/clean.csv`;
+  $('xlsx-link').href = `/api/runs/${data.id}/clean.xlsx`;
   const issues = $('issues-list'); issues.replaceChildren();
   data.issues.forEach(issue => {
     const item = el('li'); item.append(el('b', '', `Строка ${issue.line}${issue.sku ? ` · ${issue.sku}` : ''}: `), document.createTextNode(issue.message)); issues.append(item);
   });
   $('issues-wrap').hidden = !data.issues.length;
-  message(`Готово: ${data.accepted} товаров в ${data.mode === 'yml' ? 'YML и CSV' : 'CSV'}.`, true);
+  message(`Готово: ${data.accepted} товаров. Доступны CSV, Excel${data.mode === 'yml' ? ' и YML' : ''}.`, true);
   $('result-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 async function history() {
@@ -226,12 +251,12 @@ $('encoding').addEventListener('change', () => { if ($('file').files[0]) loadFil
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode, true)));
 $('header-line').addEventListener('change', () => {
   headerLineChoice = Number($('header-line').value);
-  if (csv) inspect();
+  if (csv || xlsx) inspect();
 });
-$('header-auto').addEventListener('click', () => { headerLineChoice = 'auto'; if (csv) inspect(); });
+$('header-auto').addEventListener('click', () => { headerLineChoice = 'auto'; if (csv || xlsx) inspect(); });
 enhanceSelect($('encoding'));
 $('sample-btn').addEventListener('click', async () => {
-  try { csv = await (await fetch('/sample/ready-catalog.csv')).text(); filename = 'ready-catalog.csv'; headerLineChoice = 'auto'; modeManuallySelected = false; inspect(); }
+  try { csv = await (await fetch('/sample/ready-catalog.csv')).text(); xlsx = ''; sheet = ''; $('file').value = ''; fileBytes = new Blob([csv]).size; $('encoding-control').hidden = false; filename = 'ready-catalog.csv'; headerLineChoice = 'auto'; modeManuallySelected = false; inspect(); }
   catch (error) { message(error.message); }
 });
 $('convert-btn').addEventListener('click', async () => {
@@ -239,7 +264,7 @@ $('convert-btn').addEventListener('click', async () => {
   try {
     const mapping = Object.fromEntries(fields.map(([key]) => [key, $(`map-${key}`).value]));
     const shop = { name: $('shop-name').value, company: $('company').value, url: $('shop-url').value };
-    showResult(await api('/api/convert', { csv, filename, mapping, shop, mode, headerLine: headerLineChoice }));
+    showResult(await api('/api/convert', { ...source(), filename, mapping, shop, mode, headerLine: headerLineChoice }));
     history();
   } catch (error) { message(error.message); }
   finally { button.disabled = false; }

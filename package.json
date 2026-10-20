@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.9.0" },
+  "engines": {
+    "node": ">=22.9.0"
+  },
   "scripts": {
     "start": "node --experimental-sqlite server.mjs",
     "test": "node test/lib.test.mjs"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
   }
 }
