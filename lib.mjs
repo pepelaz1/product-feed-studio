@@ -1,5 +1,5 @@
 const FIELDS = ['sku', 'name', 'category', 'price', 'url', 'description', 'image', 'stock'];
-export const REQUIRED = ['sku', 'name', 'category', 'price', 'url'];
+export const REQUIRED = ['sku', 'name', 'category', 'price'];
 export const LABELS = {
   sku: 'Артикул', name: 'Название', category: 'Категория', price: 'Цена',
   url: 'Ссылка на товар', description: 'Описание', image: 'Ссылка на фото', stock: 'Остаток (шт.)'
@@ -8,7 +8,7 @@ export const ALIASES = {
   sku: ['sku', 'article', 'артикул', 'код', 'id'],
   name: ['name', 'title', 'название', 'наименование'],
   category: ['category', 'category_name', 'категория', 'раздел'],
-  price: ['price', 'цена', 'стоимость'],
+  price: ['price', 'цена', 'цена с ндс', 'стоимость'],
   url: ['url', 'link', 'ссылка', 'ссылка на товар'],
   description: ['description', 'описание'],
   image: ['image', 'picture', 'photo', 'изображение', 'фото'],
@@ -30,11 +30,35 @@ export function detectDelimiter(text) {
     Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] : ',';
 }
 
-export function parseCsv(input) {
-  const text = input.replace(/^\uFEFF/, '');
+function headerLineFor(text, requested) {
+  const lines = text.split(/\r\n|\n|\r/);
+  if (requested !== 'auto' && requested != null) {
+    const line = Number(requested);
+    if (!Number.isInteger(line) || line < 1 || line > lines.length || !lines[line - 1].trim())
+      throw new Error('Укажите существующую непустую строку заголовков.');
+    return line;
+  }
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
+    const candidate = lines[i].trim();
+    if (!candidate) continue;
+    const delimiter = detectDelimiter(candidate);
+    const columns = candidate.split(delimiter).map(x => x.trim().replace(/^"|"$/g, '').toLocaleLowerCase('ru'));
+    const recognized = Object.entries(ALIASES).filter(([, aliases]) => columns.some(x => aliases.includes(x)));
+    if (columns.length >= 3 && recognized.length >= 2 &&
+        recognized.some(([field]) => field === 'sku' || field === 'name')) return i + 1;
+  }
+  const first = lines.findIndex(line => line.trim());
+  if (first < 0) throw new Error('CSV-файл пуст.');
+  return first + 1;
+}
+
+export function parseCsv(input, requestedHeaderLine = 'auto') {
+  const original = input.replace(/^\uFEFF/, '');
+  const headerLine = headerLineFor(original, requestedHeaderLine);
+  const text = original.split(/\r\n|\n|\r/).slice(headerLine - 1).join('\n');
   const delimiter = detectDelimiter(text);
   const rows = [];
-  let cells = [], value = '', quoted = false, closed = false, line = 1, startLine = 1;
+  let cells = [], value = '', quoted = false, closed = false, line = headerLine, startLine = headerLine;
   function finish() {
     cells.push(value);
     if (cells.some(x => x.trim() !== '')) rows.push({ line: startLine, cells });
@@ -64,7 +88,7 @@ export function parseCsv(input) {
   const headers = rows.shift().cells.map(x => x.trim());
   if (headers.some(x => !x) || new Set(headers.map(x => x.toLocaleLowerCase('ru'))).size !== headers.length)
     throw new Error('Заголовки CSV должны быть заполнены и не повторяться.');
-  return { delimiter, headers, rows };
+  return { delimiter, headers, rows, headerLine };
 }
 
 export function suggestMapping(headers) {
@@ -78,17 +102,18 @@ function webUrl(value) {
   catch { return false; }
 }
 
-export function convertCsv(csv, mapping, shop) {
-  const parsed = parseCsv(csv);
+export function convertCsv(csv, mapping, shop, { mode = 'yml', headerLine = 'auto' } = {}) {
+  if (!['yml', 'clean'].includes(mode)) throw new Error('Неизвестный режим выгрузки.');
+  const parsed = parseCsv(csv, headerLine);
   if (!mapping || typeof mapping !== 'object') throw new Error('Сопоставьте колонки CSV.');
-  for (const field of REQUIRED) if (!parsed.headers.includes(mapping[field]))
+  for (const field of [...REQUIRED, ...(mode === 'yml' ? ['url'] : [])]) if (!parsed.headers.includes(mapping[field]))
     throw new Error(`Не выбрана колонка «${LABELS[field]}».`);
   for (const field of FIELDS) if (mapping[field] && !parsed.headers.includes(mapping[field]))
     throw new Error(`Колонка «${mapping[field]}» отсутствует в CSV.`);
   const selected = FIELDS.map(field => mapping[field]).filter(Boolean);
   if (new Set(selected).size !== selected.length) throw new Error('Одна колонка сопоставлена нескольким полям.');
-  if (!shop?.name?.trim() || !shop?.company?.trim() || !webUrl(shop?.url || '') ||
-      [shop.name, shop.company, shop.url].some(hasInvalidXmlChars))
+  if (mode === 'yml' && (!shop?.name?.trim() || !shop?.company?.trim() || !webUrl(shop?.url || '') ||
+      [shop.name, shop.company, shop.url].some(hasInvalidXmlChars)))
     throw new Error('Укажите магазин, компанию и корректный URL магазина.');
   const indexes = Object.fromEntries(FIELDS.map(field => [field, parsed.headers.indexOf(mapping[field])]));
   const products = [], issues = [], seen = new Set();
@@ -102,7 +127,7 @@ export function convertCsv(csv, mapping, shop) {
     if (!p.sku || !p.name || !p.category) message = 'Артикул, название и категория обязательны.';
     else if (seen.has(p.sku.toLocaleLowerCase('ru'))) message = 'Повтор артикула.';
     else if (!/^\d+(?:[.,]\d{1,2})?$/.test(p.price) || Number(p.price.replace(',', '.')) <= 0) message = 'Цена должна быть положительным числом, до двух знаков после запятой.';
-    else if (!webUrl(p.url)) message = 'Некорректная ссылка на товар.';
+    else if ((mode === 'yml' || p.url) && !webUrl(p.url)) message = 'Некорректная ссылка на товар.';
     else if (p.image && p.image.split(';').some(url => !webUrl(url.trim()))) message = 'Некорректная ссылка на фото.';
     else if (p.stock && !/^(0|[1-9]\d*)$/.test(p.stock)) message = 'Остаток должен быть целым неотрицательным числом.';
     else if (Object.values(p).some(hasInvalidXmlChars)) message = 'Недопустимый символ для XML.';
@@ -111,7 +136,8 @@ export function convertCsv(csv, mapping, shop) {
     p.price = Number(p.price.replace(',', '.')).toFixed(2);
     products.push(p);
   }
-  return { products, issues, total: parsed.rows.length, shop: { name: shop.name.trim(), company: shop.company.trim(), url: shop.url.trim() } };
+  return { products, issues, total: parsed.rows.length, mode,
+    shop: mode === 'yml' ? { name: shop.name.trim(), company: shop.company.trim(), url: shop.url.trim() } : null };
 }
 
 const xml = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[ch]);

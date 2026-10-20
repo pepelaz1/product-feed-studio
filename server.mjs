@@ -52,34 +52,38 @@ const server = http.createServer(async (req, res) => {
         path === '/sample/ready-catalog.csv' ? 'ready-catalog.csv' : undefined);
     }
     if (req.method === 'POST' && path === '/api/inspect') {
-      const { csv } = await readJson(req); checkCsv(csv);
-      const parsed = parseCsv(csv);
+      const { csv, headerLine } = await readJson(req); checkCsv(csv);
+      const parsed = parseCsv(csv, headerLine);
       return json(res, 200, { headers: parsed.headers, delimiter: parsed.delimiter,
-        rows: parsed.rows.length, sample: parsed.rows.slice(0, 4).map(row => row.cells),
+        rows: parsed.rows.length, headerLine: parsed.headerLine,
+        sample: parsed.rows.slice(0, 4).map(row => row.cells),
         mapping: suggestMapping(parsed.headers) });
     }
     if (req.method === 'POST' && path === '/api/convert') {
       const body = await readJson(req); checkCsv(body.csv);
-      const parsed = parseCsv(body.csv);
+      const mode = body.mode || 'yml';
+      const parsed = parseCsv(body.csv, body.headerLine);
       if (parsed.rows.length > 10_000) throw new Error('Лимит — 10 000 товаров за одну загрузку.');
-      const result = convertCsv(body.csv, body.mapping, body.shop);
+      const result = convertCsv(body.csv, body.mapping, body.shop, { mode, headerLine: body.headerLine });
       const id = randomUUID();
       const record = { id, createdAt: new Date().toISOString(), filename: String(body.filename || 'catalog.csv').slice(0, 120),
+        mode,
         total: result.total, accepted: result.products.length, rejected: result.issues.length,
         issues: result.issues, preview: result.products.slice(0, 8) };
       db.prepare('INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, record.createdAt, record.filename, record.total, record.accepted, record.rejected,
-        JSON.stringify(record.issues), JSON.stringify(record.preview), toYml(result), toCleanCsv(result));
+        JSON.stringify(record.issues), JSON.stringify(record.preview), mode === 'yml' ? toYml(result) : '', toCleanCsv(result));
       return json(res, 200, record);
     }
     if (req.method === 'GET' && path === '/api/runs') return json(res, 200,
-      db.prepare('SELECT id, created_at AS createdAt, filename, total, accepted, rejected FROM runs ORDER BY created_at DESC LIMIT 10').all());
+      db.prepare("SELECT id, created_at AS createdAt, filename, total, accepted, rejected, CASE WHEN feed = '' THEN 'clean' ELSE 'yml' END AS mode FROM runs ORDER BY created_at DESC LIMIT 10").all());
     const match = path.match(/^\/api\/runs\/([0-9a-f-]{36})(?:\/(feed\.yml|clean\.csv))?$/);
     if (req.method === 'GET' && match) {
       const row = db.prepare('SELECT * FROM runs WHERE id = ?').get(match[1]);
       if (!row) return json(res, 404, { error: 'Конвертация не найдена.' });
-      if (match[2] === 'feed.yml') return send(res, 200, row.feed, 'application/xml; charset=utf-8', 'catalog-feed.yml');
+      if (match[2] === 'feed.yml') return row.feed ? send(res, 200, row.feed, 'application/xml; charset=utf-8', 'catalog-feed.yml') : json(res, 404, { error: 'Для этой выгрузки YML не создавался.' });
       if (match[2] === 'clean.csv') return send(res, 200, row.clean_csv, 'text/csv; charset=utf-8', 'catalog-clean.csv');
       return json(res, 200, { id: row.id, createdAt: row.created_at, filename: row.filename,
+        mode: row.feed ? 'yml' : 'clean',
         total: row.total, accepted: row.accepted, rejected: row.rejected,
         issues: JSON.parse(row.issues_json), preview: JSON.parse(row.preview_json) });
     }
