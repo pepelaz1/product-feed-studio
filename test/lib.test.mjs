@@ -11,6 +11,7 @@ const shop = { name: 'Магазин & Ко', company: 'Компания', url: 
 test('CSV с BOM, точкой с запятой, кавычками и переводом строки', () => {
   const parsed = parseCsv(csv);
   assert.equal(parsed.delimiter, ';');
+  assert.equal(parsed.headerLine, 1);
   assert.equal(parsed.rows.length, 3);
   assert.equal(parsed.rows[0].cells[1], 'Чай, зелёный');
   assert.equal(parsed.rows[1].line, 4);
@@ -50,4 +51,27 @@ test('неверный остаток и недопустимый XML-симво
 test('ошибочные заголовки и разметка CSV отклоняются', () => {
   assert.throws(() => parseCsv('sku,sku\na,b'), /не повторяться/);
   assert.throws(() => parseCsv('sku,name\n"a,b'), /Не закрыты кавычки/);
+});
+
+test('прайс с вводными строками очищается без ссылки на товар', () => {
+  const source = 'ПРАЙС-ЛИСТ SVih\nООО PIRS;контакты;телефон\nУсловия оплаты\n\n' +
+    'Раздел;Артикул;Наименование;Цена с НДС\nСвет;HK-203W;Лампа настольная;338\n';
+  const parsed = parseCsv(source);
+  assert.equal(parsed.headerLine, 5);
+  assert.equal(parsed.delimiter, ';');
+  assert.equal(parsed.rows[0].line, 6);
+  const mapping = suggestMapping(parsed.headers);
+  assert.equal(mapping.price, 'Цена с НДС');
+  const result = convertCsv(source, mapping, null, { mode: 'clean' });
+  assert.equal(result.products.length, 1);
+  assert.equal(result.issues.length, 0);
+  assert.match(toCleanCsv(result), /HK-203W,Лампа настольная,Свет,338\.00,/);
+  assert.throws(() => convertCsv(source, mapping, shop), /Ссылка на товар/);
+});
+
+test('ручной выбор строки заголовков и файл без вводных строк', () => {
+  const source = 'Код товара;Заголовок товара;Раздел;Цена с НДС\nA1;Лампа;Свет;99\n';
+  assert.equal(parseCsv(source).headerLine, 1);
+  assert.equal(parseCsv(source, 1).rows.length, 1);
+  assert.throws(() => parseCsv(source, 3), /строку заголовков/);
 });
