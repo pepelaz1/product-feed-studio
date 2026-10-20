@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCsv, suggestMapping, convertCsv, toYml, toCleanCsv } from '../lib.mjs';
 
-const csv = '\uFEFFАртикул;Название;Категория;Цена;Ссылка;Описание;Наличие\r\n' +
+const csv = '\uFEFFАртикул;Название;Категория;Цена;Ссылка;Описание;Остаток\r\n' +
   'A1;"Чай, зелёный";Напитки;120,50;https://example.com/a1;"Строка 1\nСтрока 2";1\r\n' +
   'A1;Повтор;Напитки;120;https://example.com/a2;;0\r\n' +
   'B2;Плохая цена;Напитки;-3;https://example.com/b2;;1\r\n';
@@ -21,9 +21,31 @@ test('проверка строк и безопасные выгрузки', () 
   assert.equal(result.products.length, 1);
   assert.equal(result.issues.length, 2);
   assert.deepEqual(result.issues.map(x => x.line), [4, 5]);
-  assert.match(toYml(result), /Магазин &amp; Ко/);
-  assert.match(toYml(result), /<price>120\.50<\/price>/);
+  const feed = toYml(result, new Date('2026-10-20T10:15:30Z'));
+  assert.match(feed, /Магазин &amp; Ко/);
+  assert.match(feed, /<yml_catalog date="2026-10-20T10:15:30\+00:00">/);
+  assert.match(feed, /<price>120\.50<\/price>/);
+  assert.match(feed, /<count>1<\/count>/);
+  assert.doesNotMatch(feed, /available=|<currencyId>/);
   assert.match(toCleanCsv(result), /"Чай, зелёный"/);
+});
+test('несколько фотографий и нулевой остаток', () => {
+  const source = 'sku,name,category,price,url,image,stock\n' +
+    'A1,Лампа,Свет,99,https://example.com/a1,"https://example.com/1.jpg;https://example.com/2.jpg",0\n';
+  const result = convertCsv(source, suggestMapping(parseCsv(source).headers), shop);
+  const feed = toYml(result);
+  assert.equal(result.issues.length, 0);
+  assert.equal((feed.match(/<picture>/g) || []).length, 2);
+  assert.match(feed, /<count>0<\/count>/);
+});
+test('неверный остаток и недопустимый XML-символ отклоняются', () => {
+  const source = 'sku,name,category,price,url,stock\n' +
+    'A1,Лампа,Свет,99,https://example.com/a1,-1\n' +
+    'A2,Лампа\u0001,Свет,99,https://example.com/a2,1\n';
+  const result = convertCsv(source, suggestMapping(parseCsv(source).headers), shop);
+  assert.equal(result.products.length, 0);
+  assert.match(result.issues[0].message, /Остаток/);
+  assert.match(result.issues[1].message, /XML/);
 });
 test('ошибочные заголовки и разметка CSV отклоняются', () => {
   assert.throws(() => parseCsv('sku,sku\na,b'), /не повторяться/);
