@@ -40,14 +40,16 @@ const files = new Map([
   ['/', ['public/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['public/style.css', 'text/css; charset=utf-8']],
-  ['/sample/catalog.csv', ['sample/catalog.csv', 'text/csv; charset=utf-8']]
+  ['/sample/catalog.csv', ['sample/catalog.csv', 'text/csv; charset=utf-8']],
+  ['/sample/ready-catalog.csv', ['sample/ready-catalog.csv', 'text/csv; charset=utf-8']]
 ]);
 const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
   try {
     if (req.method === 'GET' && files.has(path)) {
       const [file, type] = files.get(path);
-      return send(res, 200, readFileSync(join(root, file)), type);
+      return send(res, 200, readFileSync(join(root, file)), type,
+        path === '/sample/ready-catalog.csv' ? 'ready-catalog.csv' : undefined);
     }
     if (req.method === 'POST' && path === '/api/inspect') {
       const { csv } = await readJson(req); checkCsv(csv);
