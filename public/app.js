@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 const fields = [
   ['sku', 'Артикул', true], ['name', 'Название', true], ['category', 'Категория', true],
   ['price', 'Цена', true], ['url', 'Ссылка на товар', true], ['description', 'Описание', false],
-  ['image', 'Ссылка на фото', false], ['stock', 'Наличие / остаток', false]
+  ['image', 'Ссылки на фото (;)', false], ['stock', 'Остаток (шт.)', false]
 ];
 let csv = '', filename = '';
 const message = (value, ok = false) => { $('message').textContent = value; $('message').classList.toggle('ok', ok); };
