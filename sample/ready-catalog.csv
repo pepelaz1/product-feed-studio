@@ -1,0 +1,6 @@
+Артикул;Название;Категория;Цена;Ссылка;Описание;Фото;Остаток
+KITCHEN-001;Кофемолка ручная;Товары для кухни;2490,00;https://example.com/products/kitchen-001;Керамические жернова и регулировка помола;https://example.com/images/kitchen-001.jpg;12
+KITCHEN-002;Термокружка 450 мл;Товары для кухни;1290;https://example.com/products/kitchen-002;Стальная термокружка с герметичной крышкой;https://example.com/images/kitchen-002.jpg;7
+LIGHT-001;Лампа настольная;Освещение;3190;https://example.com/products/light-001;Тёплый свет и металлический корпус;https://example.com/images/light-001.jpg;4
+LIGHT-002;Ночник светодиодный;Освещение;890,50;https://example.com/products/light-002;Три режима яркости;https://example.com/images/light-002.jpg;0
+HOME-001;Короб для хранения;Товары для дома;750;https://example.com/products/home-001;Складной короб для вещей;https://example.com/images/home-001.jpg;25
