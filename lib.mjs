@@ -2,7 +2,7 @@ const FIELDS = ['sku', 'name', 'category', 'price', 'url', 'description', 'image
 export const REQUIRED = ['sku', 'name', 'category', 'price', 'url'];
 export const LABELS = {
   sku: 'Артикул', name: 'Название', category: 'Категория', price: 'Цена',
-  url: 'Ссылка на товар', description: 'Описание', image: 'Ссылка на фото', stock: 'Наличие'
+  url: 'Ссылка на товар', description: 'Описание', image: 'Ссылка на фото', stock: 'Остаток (шт.)'
 };
 export const ALIASES = {
   sku: ['sku', 'article', 'артикул', 'код', 'id'],
@@ -12,7 +12,7 @@ export const ALIASES = {
   url: ['url', 'link', 'ссылка', 'ссылка на товар'],
   description: ['description', 'описание'],
   image: ['image', 'picture', 'photo', 'изображение', 'фото'],
-  stock: ['stock', 'available', 'availability', 'наличие', 'остаток']
+  stock: ['stock', 'quantity', 'count', 'остаток', 'количество']
 };
 
 export function detectDelimiter(text) {
@@ -87,7 +87,8 @@ export function convertCsv(csv, mapping, shop) {
     throw new Error(`Колонка «${mapping[field]}» отсутствует в CSV.`);
   const selected = FIELDS.map(field => mapping[field]).filter(Boolean);
   if (new Set(selected).size !== selected.length) throw new Error('Одна колонка сопоставлена нескольким полям.');
-  if (!shop?.name?.trim() || !shop?.company?.trim() || !webUrl(shop?.url || ''))
+  if (!shop?.name?.trim() || !shop?.company?.trim() || !webUrl(shop?.url || '') ||
+      [shop.name, shop.company, shop.url].some(hasInvalidXmlChars))
     throw new Error('Укажите магазин, компанию и корректный URL магазина.');
   const indexes = Object.fromEntries(FIELDS.map(field => [field, parsed.headers.indexOf(mapping[field])]));
   const products = [], issues = [], seen = new Set();
@@ -102,34 +103,39 @@ export function convertCsv(csv, mapping, shop) {
     else if (seen.has(p.sku.toLocaleLowerCase('ru'))) message = 'Повтор артикула.';
     else if (!/^\d+(?:[.,]\d{1,2})?$/.test(p.price) || Number(p.price.replace(',', '.')) <= 0) message = 'Цена должна быть положительным числом, до двух знаков после запятой.';
     else if (!webUrl(p.url)) message = 'Некорректная ссылка на товар.';
-    else if (p.image && !webUrl(p.image)) message = 'Некорректная ссылка на фото.';
+    else if (p.image && p.image.split(';').some(url => !webUrl(url.trim()))) message = 'Некорректная ссылка на фото.';
+    else if (p.stock && !/^(0|[1-9]\d*)$/.test(p.stock)) message = 'Остаток должен быть целым неотрицательным числом.';
+    else if (Object.values(p).some(hasInvalidXmlChars)) message = 'Недопустимый символ для XML.';
     if (message) { issues.push({ line: row.line, sku: p.sku, message }); continue; }
     seen.add(p.sku.toLocaleLowerCase('ru'));
     p.price = Number(p.price.replace(',', '.')).toFixed(2);
-    p.available = !['0', 'нет', 'false', 'no', 'out of stock'].includes(p.stock.toLocaleLowerCase('ru'));
     products.push(p);
   }
   return { products, issues, total: parsed.rows.length, shop: { name: shop.name.trim(), company: shop.company.trim(), url: shop.url.trim() } };
 }
 
 const xml = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[ch]);
+function hasInvalidXmlChars(value) {
+  return /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(String(value));
+}
 export function toYml(result, date = new Date()) {
   const { products, shop } = result;
   const categories = [...new Set(products.map(p => p.category))].sort((a, b) => a.localeCompare(b, 'ru'));
   const ids = new Map(categories.map((name, i) => [name, i + 1]));
-  const stamp = date.toISOString().slice(0, 16).replace('T', ' ');
+  const stamp = date.toISOString().slice(0, 19) + '+00:00';
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', `<yml_catalog date="${stamp}">`, '  <shop>',
     `    <name>${xml(shop.name)}</name>`, `    <company>${xml(shop.company)}</company>`, `    <url>${xml(shop.url)}</url>`,
     '    <currencies><currency id="RUB" rate="1"/></currencies>', '    <categories>',
     ...categories.map(name => `      <category id="${ids.get(name)}">${xml(name)}</category>`),
     '    </categories>', '    <offers>',
     ...products.flatMap(p => [
-      `      <offer id="${xml(p.sku)}" available="${p.available}">`,
+      `      <offer id="${xml(p.sku)}">`,
       `        <url>${xml(p.url)}</url>`, `        <price>${p.price}</price>`,
-      '        <currencyId>RUB</currencyId>', `        <categoryId>${ids.get(p.category)}</categoryId>`,
+      `        <categoryId>${ids.get(p.category)}</categoryId>`,
       `        <name>${xml(p.name)}</name>`,
       ...(p.description ? [`        <description>${xml(p.description)}</description>`] : []),
-      ...(p.image ? [`        <picture>${xml(p.image)}</picture>`] : []),
+      ...(p.image ? p.image.split(';').map(url => `        <picture>${xml(url.trim())}</picture>`) : []),
+      ...(p.stock ? [`        <count>${p.stock}</count>`] : []),
       '      </offer>'
     ]), '    </offers>', '  </shop>', '</yml_catalog>'];
   return lines.join('\n') + '\n';
@@ -141,6 +147,6 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 export function toCleanCsv(result) {
-  const fields = ['sku', 'name', 'category', 'price', 'url', 'description', 'image', 'available'];
+  const fields = ['sku', 'name', 'category', 'price', 'url', 'description', 'image', 'stock'];
   return '\uFEFF' + [fields.join(','), ...result.products.map(p => fields.map(field => csvCell(p[field])).join(','))].join('\r\n') + '\r\n';
 }
