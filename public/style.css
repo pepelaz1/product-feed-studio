@@ -20,3 +20,19 @@
 .dropdown-option[aria-selected="true"]{background:#e5f5e9;font-weight:800}
 .dropdown-check{visibility:hidden;color:#218351;font-weight:900}
 .dropdown-option[aria-selected="true"] .dropdown-check{visibility:visible}
+
+.header-line-control{display:flex;align-items:center;gap:10px;margin-top:17px;flex-wrap:wrap}
+.header-line-control label{font-size:11px;font-weight:800;color:#67816e}
+.header-line-control input{width:76px;height:38px;border:1px solid #dce8df;border-radius:9px;padding:0 10px;color:#234432;background:#f9fbf9;outline:none}
+.header-line-control input:focus{border-color:#39a46c;box-shadow:0 0 0 3px #d3f0dc}
+.header-line-control .text-btn{margin-left:0}
+.header-line-control .text-btn:disabled{opacity:.5;cursor:default}
+.mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode-switch button{min-width:0;text-align:left;padding:13px;border:1px solid #dce8df;border-radius:11px;background:#f8fbf9;color:#385746;transition:background .18s,border-color .18s,box-shadow .18s}
+.mode-switch button:hover{border-color:#91c6a4}
+.mode-switch button[aria-pressed="true"]{background:#e8f7ed;border-color:#59ad75;box-shadow:0 0 0 2px #ddf1e3}
+.mode-switch strong,.mode-switch small{display:block}
+.mode-switch strong{font-size:12px}
+.mode-switch small{font-size:10px;color:#789483;margin-top:4px}
+.download[hidden],.mapping-row span[hidden],#shop-settings[hidden]{display:none}
+@media(max-width:600px){.mode-switch{grid-template-columns:1fr}}

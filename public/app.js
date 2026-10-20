@@ -1,10 +1,11 @@
 const $ = id => document.getElementById(id);
 const fields = [
   ['sku', 'Артикул', true], ['name', 'Название', true], ['category', 'Категория', true],
-  ['price', 'Цена', true], ['url', 'Ссылка на товар', true], ['description', 'Описание', false],
+  ['price', 'Цена', true], ['url', 'Ссылка на товар', false], ['description', 'Описание', false],
   ['image', 'Ссылки на фото (;)', false], ['stock', 'Остаток (шт.)', false]
 ];
 let csv = '', filename = '';
+let mode = 'yml', modeManuallySelected = false, headerLineChoice = 'auto';
 const message = (value, ok = false) => { $('message').textContent = value; $('message').classList.toggle('ok', ok); };
 const api = async (path, body) => {
   const response = await fetch(path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -32,7 +33,7 @@ function enhanceSelect(select) {
   const button = el('button', 'dropdown-trigger');
   button.type = 'button';
   button.id = `${select.id}-trigger`;
-  button.setAttribute('aria-label', label?.textContent.trim() || select.id);
+  button.setAttribute('aria-label', label?.innerText.trim() || select.id);
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
   const value = el('span', 'dropdown-value');
@@ -43,7 +44,7 @@ function enhanceSelect(select) {
   const menu = el('div', 'dropdown-menu');
   menu.id = `${select.id}-options`;
   menu.setAttribute('role', 'listbox');
-  menu.setAttribute('aria-label', label?.textContent.trim() || select.id);
+  menu.setAttribute('aria-label', label?.innerText.trim() || select.id);
   menu.hidden = true;
   button.setAttribute('aria-controls', menu.id);
   const options = [...select.options].map(option => {
@@ -123,7 +124,11 @@ function renderMapping(data) {
   fields.forEach(([key, label, required]) => {
     const row = el('div', 'mapping-row');
     const caption = el('label'); caption.htmlFor = `map-${key}`; caption.textContent = label;
-    if (required) caption.append(el('span', '', ' *'));
+    if (required || key === 'url') {
+      const mark = el('span', '', ' *');
+      if (key === 'url') { mark.id = 'map-url-required'; mark.hidden = mode !== 'yml'; }
+      caption.append(mark);
+    }
     const wrap = el('span', 'select-wrap');
     const select = el('select'); select.id = `map-${key}`;
     select.append(new Option('— Не выбрано —', ''));
@@ -135,13 +140,36 @@ function renderMapping(data) {
   renderPreview(data);
   $('convert-btn').disabled = false;
 }
+function setMode(nextMode, manual = false) {
+  mode = nextMode;
+  if (manual) modeManuallySelected = true;
+  document.querySelectorAll('[data-mode]').forEach(button =>
+    button.setAttribute('aria-pressed', String(button.dataset.mode === mode)));
+  $('shop-settings').hidden = mode !== 'yml';
+  $('convert-btn').firstChild.textContent = mode === 'yml' ? 'Проверить и создать фид ' : 'Проверить и очистить CSV ';
+  $('mode-hint').textContent = mode === 'yml'
+    ? 'YML требует ссылку на каждый товар. Дополнительные поля зависят от категории; перед рабочей загрузкой проверьте файл в кабинете продавца.'
+    : 'Очищенный CSV можно получить без ссылки на товар. Артикул, название, категория и цена остаются обязательными.';
+  const mark = $('map-url-required');
+  if (mark) mark.hidden = mode !== 'yml';
+  $('map-url-trigger')?.setAttribute('aria-label', mode === 'yml' ? 'Ссылка на товар *' : 'Ссылка на товар');
+  $('result-panel').hidden = true;
+}
 async function inspect() {
   try {
-    const data = await api('/api/inspect', { csv });
+    const data = await api('/api/inspect', { csv, headerLine: headerLineChoice });
+    if (!modeManuallySelected) setMode(data.mapping.url ? 'yml' : 'clean');
     renderMapping(data);
+    $('header-line').value = data.headerLine;
+    $('header-line').disabled = false;
+    $('header-auto').disabled = false;
+    $('header-note').textContent = data.headerLine === 1
+      ? 'Заголовки найдены в первой строке — ничего не пропущено.'
+      : `Заголовки найдены в строке ${data.headerLine}; строки 1–${data.headerLine - 1} пропущены.`;
     $('file-title').textContent = filename;
     $('file-note').textContent = `${data.rows} строк · ${new Blob([csv]).size.toLocaleString('ru')} байт`;
-    message(`Файл загружен. Найдено ${data.headers.length} колонок; проверьте сопоставление.`, true);
+    const count = data.headers.length;
+    message(`Файл загружен. Найдено ${count} ${count % 10 === 1 && count % 100 !== 11 ? 'колонка' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? 'колонки' : 'колонок'}; проверьте сопоставление.`, true);
   } catch (error) { $('convert-btn').disabled = true; message(error.message); }
 }
 async function loadFile(file) {
@@ -149,6 +177,7 @@ async function loadFile(file) {
   if (file.size > 2_000_000) return message('Файл больше 2 МБ.');
   csv = new TextDecoder($('encoding').value).decode(await file.arrayBuffer());
   filename = file.name;
+  headerLineChoice = 'auto'; modeManuallySelected = false;
   inspect();
 }
 function showResult(data) {
@@ -158,13 +187,14 @@ function showResult(data) {
   $('accepted').textContent = data.accepted;
   $('rejected').textContent = data.rejected;
   $('feed-link').href = `/api/runs/${data.id}/feed.yml`;
+  $('feed-link').hidden = data.mode !== 'yml';
   $('csv-link').href = `/api/runs/${data.id}/clean.csv`;
   const issues = $('issues-list'); issues.replaceChildren();
   data.issues.forEach(issue => {
     const item = el('li'); item.append(el('b', '', `Строка ${issue.line}${issue.sku ? ` · ${issue.sku}` : ''}: `), document.createTextNode(issue.message)); issues.append(item);
   });
   $('issues-wrap').hidden = !data.issues.length;
-  message(`Готово: ${data.accepted} товаров в выгрузке.`, true);
+  message(`Готово: ${data.accepted} товаров в ${data.mode === 'yml' ? 'YML и CSV' : 'CSV'}.`, true);
   $('result-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 async function history() {
@@ -193,9 +223,15 @@ zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
 zone.addEventListener('drop', event => { event.preventDefault(); zone.classList.remove('dragging'); loadFile(event.dataTransfer.files[0]); });
 $('file').addEventListener('change', event => loadFile(event.target.files[0]));
 $('encoding').addEventListener('change', () => { if ($('file').files[0]) loadFile($('file').files[0]); });
+document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode, true)));
+$('header-line').addEventListener('change', () => {
+  headerLineChoice = Number($('header-line').value);
+  if (csv) inspect();
+});
+$('header-auto').addEventListener('click', () => { headerLineChoice = 'auto'; if (csv) inspect(); });
 enhanceSelect($('encoding'));
 $('sample-btn').addEventListener('click', async () => {
-  try { csv = await (await fetch('/sample/ready-catalog.csv')).text(); filename = 'ready-catalog.csv'; inspect(); }
+  try { csv = await (await fetch('/sample/ready-catalog.csv')).text(); filename = 'ready-catalog.csv'; headerLineChoice = 'auto'; modeManuallySelected = false; inspect(); }
   catch (error) { message(error.message); }
 });
 $('convert-btn').addEventListener('click', async () => {
@@ -203,7 +239,7 @@ $('convert-btn').addEventListener('click', async () => {
   try {
     const mapping = Object.fromEntries(fields.map(([key]) => [key, $(`map-${key}`).value]));
     const shop = { name: $('shop-name').value, company: $('company').value, url: $('shop-url').value };
-    showResult(await api('/api/convert', { csv, filename, mapping, shop }));
+    showResult(await api('/api/convert', { csv, filename, mapping, shop, mode, headerLine: headerLineChoice }));
     history();
   } catch (error) { message(error.message); }
   finally { button.disabled = false; }
