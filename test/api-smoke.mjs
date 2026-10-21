@@ -26,4 +26,26 @@ assert.equal(response.status, 200);
 const downloaded = new ExcelJS.Workbook();
 await downloaded.xlsx.load(Buffer.from(await response.arrayBuffer()));
 assert.equal(downloaded.worksheets[0].getCell('B2').value, 'Лампа');
-console.log('XLSX API smoke passed');
+const jsonCatalog = JSON.stringify({ products: [
+  { sku: 'A-1', name: 'Лампа', price: 349.5, details: 'Белая' },
+  { sku: 'A-1', name: 'Повтор', price: 99, details: 'Дубль' }
+] });
+const jsonInspect = await post('/api/inspect', { format: 'json', json: jsonCatalog });
+assert.equal(jsonInspect.mapping.details, 'details');
+const jsonRun = await post('/api/convert', { format: 'json', json: jsonCatalog,
+  filename: 'catalog.json', mapping: jsonInspect.mapping, mode: 'clean' });
+assert.equal(jsonRun.accepted, 1);
+assert.equal(jsonRun.rejected, 1);
+const supplier = await fetch(`${base}/api/runs/${jsonRun.id}/supplier.xlsx`);
+assert.equal(supplier.status, 200);
+const supplierBook = new ExcelJS.Workbook();
+await supplierBook.xlsx.load(Buffer.from(await supplier.arrayBuffer()));
+assert.equal(supplierBook.worksheets[0].getCell('C2').value, 349.5);
+assert.equal(supplierBook.worksheets[0].getCell('D2').value, 'Белая');
+const issues = await fetch(`${base}/api/runs/${jsonRun.id}/issues.csv`);
+assert.equal(issues.status, 200);
+assert.match(await issues.text(), /Повтор артикула/);
+const exportedJson = await fetch(`${base}/api/runs/${jsonRun.id}/clean.json`);
+assert.equal(exportedJson.status, 200);
+assert.equal((await exportedJson.json()).products[0].details, 'Белая');
+console.log('XLSX + JSON + supplier API smoke passed');

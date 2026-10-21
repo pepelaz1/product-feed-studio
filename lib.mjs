@@ -1,8 +1,8 @@
-const FIELDS = ['sku', 'name', 'category', 'price', 'url', 'description', 'image', 'stock'];
-export const REQUIRED = ['sku', 'name', 'category', 'price'];
+const FIELDS = ['sku', 'name', 'category', 'price', 'url', 'description', 'details', 'image', 'stock'];
+export const REQUIRED = ['sku', 'name', 'price'];
 export const LABELS = {
   sku: 'Артикул', name: 'Название', category: 'Категория', price: 'Цена',
-  url: 'Ссылка на товар', description: 'Описание', image: 'Ссылка на фото', stock: 'Остаток (шт.)'
+  url: 'Ссылка на товар', description: 'Описание', details: 'Краткие характеристики', image: 'Ссылка на фото', stock: 'Остаток (шт.)'
 };
 export const ALIASES = {
   sku: ['sku', 'article', 'артикул', 'код', 'id'],
@@ -11,6 +11,7 @@ export const ALIASES = {
   price: ['price', 'цена', 'цена с ндс', 'стоимость'],
   url: ['url', 'link', 'ссылка', 'ссылка на товар'],
   description: ['description', 'описание'],
+  details: ['details', 'features', 'attributes', 'характеристики', 'краткие характеристики', 'свойства'],
   image: ['image', 'picture', 'photo', 'изображение', 'фото'],
   stock: ['stock', 'quantity', 'count', 'остаток', 'количество']
 };
@@ -106,7 +107,7 @@ export function convertCsv(csv, mapping, shop, { mode = 'yml', headerLine = 'aut
   if (!['yml', 'clean'].includes(mode)) throw new Error('Неизвестный режим выгрузки.');
   const parsed = parseCsv(csv, headerLine);
   if (!mapping || typeof mapping !== 'object') throw new Error('Сопоставьте колонки CSV.');
-  for (const field of [...REQUIRED, ...(mode === 'yml' ? ['url'] : [])]) if (!parsed.headers.includes(mapping[field]))
+  for (const field of [...REQUIRED, ...(mode === 'yml' ? ['category', 'url'] : [])]) if (!parsed.headers.includes(mapping[field]))
     throw new Error(`Не выбрана колонка «${LABELS[field]}».`);
   for (const field of FIELDS) if (mapping[field] && !parsed.headers.includes(mapping[field]))
     throw new Error(`Колонка «${mapping[field]}» отсутствует в CSV.`);
@@ -124,7 +125,8 @@ export function convertCsv(csv, mapping, shop, { mode = 'yml', headerLine = 'aut
     }
     const p = Object.fromEntries(FIELDS.map(field => [field, indexes[field] < 0 ? '' : row.cells[indexes[field]].trim()]));
     let message = '';
-    if (!p.sku || !p.name || !p.category) message = 'Артикул, название и категория обязательны.';
+    if (!p.sku || !p.name || (mode === 'yml' && !p.category)) message = mode === 'yml'
+      ? 'Артикул, название и категория обязательны.' : 'Артикул и название обязательны.';
     else if (seen.has(p.sku.toLocaleLowerCase('ru'))) message = 'Повтор артикула.';
     else if (!/^\d+(?:[.,]\d{1,2})?$/.test(p.price) || Number(p.price.replace(',', '.')) <= 0) message = 'Цена должна быть положительным числом, до двух знаков после запятой.';
     else if ((mode === 'yml' || p.url) && !webUrl(p.url)) message = 'Некорректная ссылка на товар.';
@@ -167,12 +169,49 @@ export function toYml(result, date = new Date()) {
   return lines.join('\n') + '\n';
 }
 
+function quoteCell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
 function csvCell(value) {
   let text = String(value ?? '');
   if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  return quoteCell(text);
 }
 export function toCleanCsv(result) {
-  const fields = ['sku', 'name', 'category', 'price', 'url', 'description', 'image', 'stock'];
+  const fields = FIELDS;
   return '\uFEFF' + [fields.join(','), ...result.products.map(p => fields.map(field => csvCell(p[field])).join(','))].join('\r\n') + '\r\n';
+}
+
+export function toSupplierCsv(result) {
+  const fields = ['sku', 'name', 'price', 'details'];
+  const labels = ['Артикул', 'Наименование', 'Цена', 'Краткие характеристики'];
+  return '\uFEFF' + [labels.join(','), ...result.products.map(p => fields.map(field => csvCell(p[field])).join(','))].join('\r\n') + '\r\n';
+}
+
+export function toIssuesCsv(issues) {
+  return '\uFEFF' + ['Строка,Артикул,Причина', ...issues.map(issue =>
+    [issue.line, issue.sku, issue.message].map(csvCell).join(','))].join('\r\n') + '\r\n';
+}
+
+export function toCleanJson(result) {
+  return JSON.stringify({ products: result.products }, null, 2) + '\n';
+}
+
+export function jsonToCsv(input) {
+  let data;
+  try { data = JSON.parse(input.replace(/^\uFEFF/, '')); }
+  catch { throw new Error('Некорректный JSON-файл.'); }
+  const products = Array.isArray(data) ? data : data?.products;
+  if (!Array.isArray(products) || !products.length || products.length > 10_000 ||
+      products.some(item => !item || Array.isArray(item) || typeof item !== 'object'))
+    throw new Error('Ожидается непустой массив товаров или объект с массивом products (до 10 000).');
+  const headers = [...new Set(products.flatMap(item => Object.keys(item)))];
+  if (!headers.length || headers.length > 100) throw new Error('Лимит JSON: до 100 полей товара.');
+  const cell = value => {
+    if (value == null) return '';
+    if (['string', 'number', 'boolean'].includes(typeof value)) return String(value);
+    throw new Error('Поля JSON должны содержать строки, числа или булевы значения. Вложенные объекты не поддерживаются.');
+  };
+  return [headers.map(quoteCell).join(','), ...products.map(item => headers.map(key => quoteCell(cell(item[key]))).join(','))].join('\r\n');
 }

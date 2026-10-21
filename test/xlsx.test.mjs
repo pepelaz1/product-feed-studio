@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
 import { readXlsx, cleanXlsx } from '../xlsx.mjs';
-import { parseCsv, suggestMapping, convertCsv, toCleanCsv } from '../lib.mjs';
+import { parseCsv, suggestMapping, convertCsv, toCleanCsv, toSupplierCsv } from '../lib.mjs';
 
 test('Excel: выбор листа, вводные строки, проверка товаров и обратная выгрузка', async () => {
   const workbook = new ExcelJS.Workbook();
@@ -30,4 +30,15 @@ test('Excel: выбор листа, вводные строки, проверк�
 
 test('Excel: неверный файл отклоняется', async () => {
   await assert.rejects(readXlsx(Buffer.from('not excel')), /не похож на XLSX/);
+});
+
+test('товарный шаблон Excel содержит четыре колонки и числовую цену', async () => {
+  const csv = 'Артикул;Наименование;Цена;Краткие характеристики\nA-1;Лампа;349,50;Белая\n';
+  const result = convertCsv(csv, suggestMapping(parseCsv(csv).headers), null, { mode: 'clean' });
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(await cleanXlsx(toSupplierCsv(result)));
+  const sheet = book.worksheets[0];
+  assert.equal(sheet.getRow(1).cellCount, 4);
+  assert.equal(sheet.getCell('C2').value, 349.5);
+  assert.equal(sheet.autoFilter, 'A1:D2');
 });

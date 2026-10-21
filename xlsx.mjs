@@ -52,7 +52,7 @@ export async function cleanXlsx(cleanCsv) {
   sheet.addRow(parsed.headers);
   for (const row of parsed.rows) {
     const values = row.cells.map((value, index) => {
-      if (parsed.headers[index] === 'price') return Number(value);
+      if (['price', 'Цена'].includes(parsed.headers[index])) return Number(value);
       // Keep spreadsheet programs from interpreting user-supplied text as formulas.
       return /^[\s]*[=+@-]/.test(value) ? "'" + value : value;
     });
@@ -61,7 +61,8 @@ export async function cleanXlsx(cleanCsv) {
   sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF145743' } };
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  sheet.autoFilter = { from: 'A1', to: `H${sheet.rowCount}` };
+  const lastColumn = sheet.getRow(1).cellCount;
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: sheet.rowCount, column: lastColumn } };
   sheet.columns.forEach(column => { column.width = 22; });
   const data = await book.xlsx.writeBuffer();
   return Buffer.from(data);
