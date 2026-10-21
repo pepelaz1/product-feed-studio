@@ -185,3 +185,33 @@ footer { border-color: #dce6f6; color: #8ba0ba; }
 @media (max-width: 600px) {
   .topbar { height: 68px; }
 }
+.workflow-section { max-width: 1440px; margin: 36px auto 70px; padding: 0 32px; }
+.workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.workflow-card { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.workflow-card .panel-head { margin-bottom: 6px; }
+.workflow-label { color: #31425c; font-size: 14px; font-weight: 700; }
+.workflow-card input[type="file"], .workflow-select, .workflow-numbers input {
+  width: 100%; border: 1px solid #d9e4f5; border-radius: 12px; background: #f8faff;
+  color: #1c3152; padding: 11px 13px; font: inherit;
+}
+.workflow-card input[type="file"]::file-selector-button {
+  margin-right: 14px; padding: 8px 12px; border: 0; border-radius: 8px;
+  background: #e7efff; color: #005bff; font: inherit; font-weight: 700; cursor: pointer;
+}
+.workflow-card a { color: #005bff; }
+.workflow-card .primary-btn { align-self: flex-start; margin-top: auto; }
+.workflow-numbers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.workflow-numbers label { font-size: 13px; font-weight: 700; color: #405775; }
+.workflow-numbers input { display: block; margin-top: 7px; }
+.workflow-output { margin-top: 24px; }
+.workflow-output .table-scroll { margin-top: 20px; max-height: 340px; }
+.workflow-output th, .workflow-output td { min-width: 115px; white-space: nowrap; }
+.workflow-output .issues-list { margin-top: 18px; }
+.workflow-rules summary { cursor: pointer; color: #005bff; font-weight: 700; }
+.workflow-rules textarea { width: 100%; border: 1px solid #d9e4f5; border-radius: 12px; padding: 12px; resize: vertical; font: 13px/1.5 Consolas, monospace; }
+.workflow-jump { display: inline-flex; margin: 12px 0 6px; padding: 9px 14px; border-radius: 10px; background: #ffffff22; color: #fff; font-weight: 700; text-decoration: none; }
+.workflow-jump:hover { background: #ffffff33; }
+@media (max-width: 850px) {
+  .workflow-grid { grid-template-columns: 1fr; }
+  .workflow-section { padding: 0 18px; }
+}

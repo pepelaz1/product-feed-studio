@@ -16,7 +16,7 @@
     </header>
     <main>
       <section class="hero">
-        <div class="hero-copy"><span class="eyebrow">ТОВАРНЫЕ ДАННЫЕ · CSV / XLSX / JSON → CSV / XLSX / YML</span><h1>Из таблицы —<br><em>в каталог товаров.</em></h1><p>Загрузите прайс, сопоставьте колонки и получите полную или краткую товарную таблицу. Если есть ссылки на товары, можно дополнительно создать YML для Яндекс Маркета. Ошибки видны по строкам.</p><div class="hero-facts"><span><b>01</b> Загрузка</span><span><b>02</b> Проверка</span><span><b>03</b> Выгрузка</span></div></div>
+        <div class="hero-copy"><span class="eyebrow">ТОВАРНЫЕ ДАННЫЕ · CSV / XLSX / JSON / XML → CSV / XLSX / YML</span><h1>Из таблицы —<br><em>в каталог товаров.</em></h1><p>Загрузите прайс, сопоставьте колонки и получите товарную таблицу или YML. Ниже есть импорт YML и CommerceML, объединение файлов и сверка цен поставщиков. Ошибки видны по строкам.</p><a class="workflow-jump" href="#workflows">К импорту и прайсам ↘</a><div class="hero-facts"><span><b>01</b> Загрузка</span><span><b>02</b> Проверка</span><span><b>03</b> Выгрузка</span></div></div>
         <div class="hero-art" aria-hidden="true"><div class="art-card art-source"><span>catalog.csv</span><b>SKU&nbsp;&nbsp; NAME&nbsp;&nbsp; PRICE</b><i>A101&nbsp; Lamp&nbsp;&nbsp; 3490</i><i>B205&nbsp; Chair&nbsp; 7990</i><i>C312&nbsp; Vase&nbsp;&nbsp; 1190</i></div><div class="art-flow">↗</div><div class="art-card art-result"><span>feed.yml</span><b>✓ 3 товара готовы</b><i>&lt;offers&gt;</i><i>&nbsp; &lt;offer id="A101" /&gt;</i><i>&lt;/offers&gt;</i></div></div>
       </section>
       <section class="workspace">
@@ -40,9 +40,40 @@
           </div>
         </div>
       </section>
+      <section class="workflow-section" id="workflows">
+        <div class="section-heading"><div><span class="eyebrow dark">ДОПОЛНИТЕЛЬНЫЕ РЕЖИМЫ</span><h2>Импорт и прайсы поставщиков</h2></div></div>
+        <div class="workflow-grid">
+          <article class="panel workflow-card">
+            <div class="panel-head"><span class="number">04</span><div><h3>XML → товарная таблица</h3><p>YML или CommerceML; выгрузка в CSV и Excel</p></div></div>
+            <label class="workflow-label" for="xml-mode">Тип XML</label>
+            <select id="xml-mode" class="workflow-select"><option value="yml-import">YML — каталог предложений</option><option value="commerce-import">CommerceML — каталог и предложения</option></select>
+            <label class="workflow-label" for="xml-file">Основной XML-файл</label><input id="xml-file" type="file" accept=".xml,.yml,text/xml,application/xml">
+            <div id="offers-wrap" hidden><label class="workflow-label" for="offers-file">Файл предложений (offers.xml), если отдельный</label><input id="offers-file" type="file" accept=".xml,text/xml,application/xml"></div>
+            <p class="hint">Примеры: <a href="/sample/example.yml" download>YML</a> · <a href="/sample/example-commerce.xml" download>CommerceML</a> + <a href="/sample/example-offers.xml" download>предложения</a></p>
+            <button id="xml-run" class="primary-btn" type="button">Импортировать XML ↗</button><p id="xml-status" class="message" role="status"></p>
+          </article>
+          <article class="panel workflow-card">
+            <div class="panel-head"><span class="number">05</span><div><h3>Несколько прайсов</h3><p>Объединение или сверка каталога с поставщиками</p></div></div>
+            <label class="workflow-label" for="batch-mode">Режим</label>
+            <select id="batch-mode" class="workflow-select"><option value="merge">Объединить файлы</option><option value="reconcile">Сверить цены и остатки</option></select>
+            <label class="workflow-label" for="batch-files">Файлы CSV / XLSX / JSON (2–5)</label><input id="batch-files" type="file" multiple accept=".csv,.xlsx,.json">
+            <p class="hint">При сверке первый файл — ваш каталог, остальные — поставщики. Сопоставление: артикул, затем точная пара бренд + модель.</p>
+            <div id="reconcile-options" hidden>
+              <label class="workflow-label" for="map-file">Таблица соответствий артикулов (необязательно)</label><input id="map-file" type="file" accept=".csv,.xlsx,.json">
+              <div class="workflow-numbers"><label>Наценка, %<input id="markup" type="number" min="0" step="0.1" value="20"></label><label>Скидка, %<input id="discount" type="number" min="0" max="100" step="0.1" value="0"></label><label>USD → ₽<input id="usd-rate" type="number" min="0" step="0.01" placeholder="Если есть USD"></label><label>EUR → ₽<input id="eur-rate" type="number" min="0" step="0.01" placeholder="Если есть EUR"></label></div>
+              <details class="workflow-rules"><summary>Особые правила для SKU, бренда и категории</summary><p class="hint">Необязательно. JSON задаёт наценку и скидку для отдельных товаров; правило SKU важнее бренда, бренд важнее категории.</p><textarea id="rules-json" rows="5" spellcheck="false" placeholder='{"byBrand":{"Демо":{"markup":15}},"bySku":{"LAMP-001":{"discount":5}}}'></textarea></details>
+              <p class="hint">Курсы задаются вручную. Нулевые или отсутствующие остатки исключаются из выбора; при отсутствии поставщика остаток 0, базовая цена остаётся в исходных колонках.</p>
+            </div>
+            <p class="hint">Примеры: <a href="/sample/example-supplier-a.csv" download>каталог</a> · <a href="/sample/example-supplier-b.csv" download>поставщик</a> · <a href="/sample/example-sku-map.csv" download>соответствия SKU</a></p>
+            <button id="batch-run" class="primary-btn" type="button">Обработать прайсы ↗</button><p id="batch-status" class="message" role="status"></p>
+          </article>
+        </div>
+        <article class="panel workflow-output" id="workflow-output" hidden><div class="panel-head"><span class="number success">✓</span><div><h3>Готовая выгрузка</h3><p id="workflow-summary"></p></div></div><div class="download-row"><a id="workflow-csv" class="download primary-download">Скачать CSV ↓</a><a id="workflow-xlsx" class="download">Скачать Excel ↓</a><a id="workflow-issues" class="download">Замечания CSV ↓</a></div><div class="table-scroll"><table id="workflow-preview"></table></div><ul id="workflow-warnings" class="issues-list"></ul></article>
+      </section>
       <footer><span>FEED STUDIO · ДЕМО-ПРОЕКТ</span><span>Node.js + SQLite · Данные примера вымышлены</span></footer>
     </main>
   </div>
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/workflows.js"></script>
 </body>
 </html>

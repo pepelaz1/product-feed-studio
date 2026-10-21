@@ -6,11 +6,15 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { parseCsv, suggestMapping, convertCsv, toYml, toCleanCsv, toSupplierCsv, toIssuesCsv, toCleanJson, jsonToCsv } from './lib.mjs';
 import { readXlsx, cleanXlsx } from './xlsx.mjs';
+import { csvToTable, rowsToCsv } from './tabular.mjs';
+import { importYml, importCommerceMl } from './xml-import.mjs';
+import { mergeTables, reconcileTables } from './batch.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(root, 'data');
 mkdirSync(dataDir, { recursive: true });
 const db = new DatabaseSync(join(dataDir, 'feed-studio.sqlite'));
+db.exec("CREATE TABLE IF NOT EXISTS workflow_runs (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, mode TEXT NOT NULL, summary_json TEXT NOT NULL, preview_json TEXT NOT NULL, output_csv TEXT NOT NULL, issues_csv TEXT NOT NULL)");
 db.exec(`CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY, created_at TEXT NOT NULL, filename TEXT NOT NULL,
   total INTEGER NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL,
@@ -27,11 +31,11 @@ function send(res, code, body, type, name) {
   if (name) headers['Content-Disposition'] = `attachment; filename="${name}"`;
   res.writeHead(code, headers); res.end(body);
 }
-async function readJson(req) {
+async function readJson(req, limit = 4_000_000) {
   let size = 0; const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 4_000_000) throw new Error('Файл слишком большой. Лимит — 2 МБ.');
+    if (size > limit) throw new Error('Запрос слишком большой.');
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
@@ -66,7 +70,14 @@ const files = new Map([
   ['/sample/supplier-catalog.csv', ['sample/supplier-catalog.csv', 'text/csv; charset=utf-8']],
   ['/sample/supplier-catalog.json', ['sample/supplier-catalog.json', 'application/json; charset=utf-8']],
   ['/sample/ready-catalog.csv', ['sample/ready-catalog.csv', 'text/csv; charset=utf-8']],
-  ['/sample/ready-catalog.xlsx', ['sample/ready-catalog.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']]
+  ['/sample/ready-catalog.xlsx', ['sample/ready-catalog.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']],
+  ['/workflows.js', ['public/workflows.js', 'text/javascript; charset=utf-8']],
+  ['/sample/example.yml', ['sample/example.yml', 'application/xml; charset=utf-8']],
+  ['/sample/example-commerce.xml', ['sample/example-commerce.xml', 'application/xml; charset=utf-8']],
+  ['/sample/example-offers.xml', ['sample/example-offers.xml', 'application/xml; charset=utf-8']],
+  ['/sample/example-supplier-a.csv', ['sample/example-supplier-a.csv', 'text/csv; charset=utf-8']],
+  ['/sample/example-supplier-b.csv', ['sample/example-supplier-b.csv', 'text/csv; charset=utf-8']],
+  ['/sample/example-sku-map.csv', ['sample/example-sku-map.csv', 'text/csv; charset=utf-8']]
 ]);
 const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
@@ -106,6 +117,47 @@ const server = http.createServer(async (req, res) => {
         record.total, record.accepted, record.rejected, JSON.stringify(record.issues), JSON.stringify(record.preview),
         mode === 'yml' ? toYml(result) : '', toCleanCsv(result), toSupplierCsv(result), toCleanJson(result));
       return json(res, 200, record);
+    }
+    if (req.method === 'POST' && path === '/api/workflows') {
+      const body = await readJson(req, 18_000_000);
+      let result;
+      if (body.mode === 'yml-import') result = importYml(body.xml);
+      else if (body.mode === 'commerce-import') result = importCommerceMl(body.xml, body.offersXml || '');
+      else if (body.mode === 'merge' || body.mode === 'reconcile') {
+        if (!Array.isArray(body.files) || body.files.length > 5) throw new Error('Выберите до пяти файлов.');
+        const files = [];
+        for (const file of body.files) {
+          const input = await source(file);
+          files.push({ filename: String(file.filename || 'source.csv'), table: csvToTable(input.csv, file.headerLine || 'auto') });
+        }
+        let skuMap;
+        if (body.mapFile) {
+          const input = await source(body.mapFile);
+          skuMap = csvToTable(input.csv, body.mapFile.headerLine || 'auto');
+        }
+        result = body.mode === 'merge' ? mergeTables(files) : reconcileTables(files, body.options || {}, skuMap);
+      } else throw new Error('Неизвестный режим обработки.');
+      if (result.table.headers.length > 100) throw new Error('Результат превысил 100 колонок. Уменьшите число свойств.');
+      const id = randomUUID();
+      const output = rowsToCsv(result.table.headers, result.table.rows);
+      const issueCsv = rowsToCsv(['Файл', 'Строка', 'Артикул', 'Причина'],
+        result.issues.map(issue => [issue.file || '', issue.row, issue.sku || '', issue.reason]));
+      const summary = { id, mode: result.mode, total: result.total, columns: result.table.headers.length,
+        warnings: result.issues.length, ...(result.summary || {}) };
+      db.prepare('INSERT INTO workflow_runs VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        id, new Date().toISOString(), result.mode, JSON.stringify(summary),
+        JSON.stringify(result.table.rows.slice(0, 8)), output, issueCsv);
+      return json(res, 200, { ...summary, headers: result.table.headers, preview: result.table.rows.slice(0, 8),
+        issues: result.issues.slice(0, 10) });
+    }
+    const workflowMatch = path.match(/^\/api\/workflows\/([0-9a-f-]{36})\/(output\.csv|output\.xlsx|issues\.csv)$/);
+    if (req.method === 'GET' && workflowMatch) {
+      const row = db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(workflowMatch[1]);
+      if (!row) return json(res, 404, { error: 'Выгрузка не найдена.' });
+      if (workflowMatch[2] === 'issues.csv') return send(res, 200, row.issues_csv, 'text/csv; charset=utf-8', 'feed-studio-issues.csv');
+      if (workflowMatch[2] === 'output.csv') return send(res, 200, row.output_csv, 'text/csv; charset=utf-8', 'feed-studio-output.csv');
+      return send(res, 200, await cleanXlsx(row.output_csv),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'feed-studio-output.xlsx');
     }
     if (req.method === 'GET' && path === '/api/runs') return json(res, 200,
       db.prepare("SELECT id, created_at AS createdAt, filename, total, accepted, rejected, CASE WHEN feed = '' THEN 'clean' ELSE 'yml' END AS mode FROM runs ORDER BY created_at DESC LIMIT 10").all());

@@ -8,9 +8,10 @@
   },
   "scripts": {
     "start": "node --experimental-sqlite server.mjs",
-    "test": "node test/lib.test.mjs"
+    "test": "node test/all.test.mjs"
   },
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "saxes": "^5.0.1"
   }
 }

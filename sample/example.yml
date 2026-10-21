@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<yml_catalog date="2026-10-21 12:00">
+  <shop><name>Демо-магазин</name><company>Демо</company><url>https://example.com</url>
+    <currencies><currency id="RUB" rate="1"/></currencies>
+    <categories><category id="1">Освещение</category><category id="2" parentId="1">Настольные лампы</category></categories>
+    <offers>
+      <offer id="LAMP-001" available="true"><name>Настольная лампа</name><categoryId>2</categoryId><price>3490</price><currencyId>RUB</currencyId><count>8</count><picture>https://example.com/lamp-front.jpg</picture><picture>https://example.com/lamp-side.jpg</picture><description>Демонстрационный товар</description><url>https://example.com/lamp</url></offer>
+      <offer id="LAMP-002" available="false"><name>Лампа без фото</name><categoryId>2</categoryId><price>2590</price><currencyId>RUB</currencyId><count>0</count></offer>
+    </offers>
+  </shop>
+</yml_catalog>
