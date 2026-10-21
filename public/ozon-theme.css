@@ -41,8 +41,9 @@ a, button, input, select { -webkit-tap-highlight-color: transparent; }
 }
 .eyebrow { color: #b9d1ff; }
 .hero h1 {
-  font-weight: 800;
-  letter-spacing: -.055em;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 .hero h1 em { color: #fff; }
 .hero p, .hero-facts { color: #e0ebff; }
