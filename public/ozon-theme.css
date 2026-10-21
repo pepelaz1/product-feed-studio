@@ -185,7 +185,7 @@ footer { border-color: #dce6f6; color: #8ba0ba; }
 @media (max-width: 600px) {
   .topbar { height: 68px; }
 }
-.workflow-section { max-width: 1440px; margin: 36px auto 70px; padding: 0 32px; }
+.workflow-section { max-width: 1250px; margin: 36px auto 70px; }
 .workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .workflow-card { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
 .workflow-card .panel-head { margin-bottom: 6px; }
@@ -213,5 +213,10 @@ footer { border-color: #dce6f6; color: #8ba0ba; }
 .workflow-jump:hover { background: #ffffff33; }
 @media (max-width: 850px) {
   .workflow-grid { grid-template-columns: 1fr; }
-  .workflow-section { padding: 0 18px; }
+}
+@media (max-width: 1300px) {
+  .workflow-section { margin-left: 24px; margin-right: 24px; }
+}
+@media (max-width: 600px) {
+  .workflow-section { margin-left: 12px; margin-right: 12px; }
 }
