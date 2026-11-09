@@ -67,6 +67,12 @@
             <p class="hint">Примеры: <a href="/sample/example-supplier-a.csv" download>каталог</a> · <a href="/sample/example-supplier-b.csv" download>поставщик</a> · <a href="/sample/example-sku-map.csv" download>соответствия SKU</a></p>
             <button id="batch-run" class="primary-btn" type="button">Обработать прайсы ↗</button><p id="batch-status" class="message" role="status"></p>
           </article>
+          <article class="panel workflow-card">
+            <div class="panel-head"><span class="number">06</span><div><h3>Яндекс Kit → подготовка для WB</h3><p>Поля товаров, фото и остатки с проверкой пробелов</p></div></div>
+            <label class="workflow-label" for="kit-file">Выгрузка товаров Яндекс Kit (.xlsx)</label><input id="kit-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <p class="hint">Результат — промежуточная таблица и отчёт о недостающих данных. Это не шаблон загрузки WB: предмет, обязательные характеристики и проверку уже существующих карточек нужно завершить в кабинете продавца. Цены и описания не меняются.</p>
+            <button id="kit-run" class="primary-btn" type="button">Подготовить таблицу ↗</button><p id="kit-status" class="message" role="status"></p>
+          </article>
         </div>
         <article class="panel workflow-output" id="workflow-output" hidden><div class="panel-head"><span class="number success">✓</span><div><h3>Готовая выгрузка</h3><p id="workflow-summary"></p></div></div><div class="download-row"><a id="workflow-csv" class="download primary-download">Скачать CSV ↓</a><a id="workflow-xlsx" class="download">Скачать Excel ↓</a><a id="workflow-issues" class="download">Замечания CSV ↓</a></div><div class="table-scroll"><table id="workflow-preview"></table></div><ul id="workflow-warnings" class="issues-list"></ul></article>
       </section>

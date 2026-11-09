@@ -9,6 +9,7 @@ import { readXlsx, cleanXlsx } from './xlsx.mjs';
 import { csvToTable, rowsToCsv } from './tabular.mjs';
 import { importYml, importCommerceMl } from './xml-import.mjs';
 import { mergeTables, reconcileTables } from './batch.mjs';
+import { prepareKitForWb } from './kit-wb.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(root, 'data');
@@ -123,6 +124,13 @@ const server = http.createServer(async (req, res) => {
       let result;
       if (body.mode === 'yml-import') result = importYml(body.xml);
       else if (body.mode === 'commerce-import') result = importCommerceMl(body.xml, body.offersXml || '');
+      else if (body.mode === 'kit-wb') {
+        const file = body.file;
+        if (file?.format !== 'xlsx' || typeof file.xlsx !== 'string' ||
+            file.xlsx.length > 2_800_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(file.xlsx))
+          throw new Error('Выберите XLSX-выгрузку Яндекс Kit до 2 МБ.');
+        result = await prepareKitForWb(Buffer.from(file.xlsx, 'base64'));
+      }
       else if (body.mode === 'merge' || body.mode === 'reconcile') {
         if (!Array.isArray(body.files) || body.files.length > 5) throw new Error('Выберите до пяти файлов.');
         const files = [];

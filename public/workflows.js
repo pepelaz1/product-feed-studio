@@ -102,4 +102,17 @@ $('batch-run').addEventListener('click', async () => {
   } catch (error) { status('batch-status', error.message); }
   finally { button.disabled = false; }
 });
+$('kit-run').addEventListener('click', async () => {
+  const button = $('kit-run');
+  button.disabled = true;
+  status('kit-status', 'Проверяю выгрузку Яндекс Kit…');
+  try {
+    const file = $('kit-file').files[0];
+    if (!file || !file.name.toLowerCase().endsWith('.xlsx')) throw new Error('Выберите XLSX-файл Яндекс Kit.');
+    const result = await post({ mode: 'kit-wb', file: await filePayload(file) });
+    show(result);
+    status('kit-status', `Подготовлено ${result.total} товаров. Замечаний: ${result.warnings}.`, true);
+  } catch (error) { status('kit-status', error.message); }
+  finally { button.disabled = false; }
+});
 changeModes();
